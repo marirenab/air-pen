@@ -36,15 +36,40 @@ Leave the terminal running while you use it. Press `Ctrl+C` to stop the server.
 
 ## Controls
 
+Press `H` in the app to open or close a help panel with all of these.
+
+### Hand gestures
+
+| Gesture | Action |
+| --- | --- |
+| 🤏 Pinch thumb + index | Draw. The dot turns white while drawing. |
+| 🖐️ Open your fingers | Stop drawing and move the dot freely |
+| ⏸️ Keep pinching and hold still | Snap a rough shape to a clean line, circle, triangle or rectangle |
+| ☝️ Move your hand | The dot follows the point between your thumb and index finger |
+
 ### Drawing
 
 | Control | Action |
 | --- | --- |
 | Pinch thumb + index (hold) | Draw (the dot turns white while drawing) |
 | `Shift` (hold) | Draw with the keyboard instead (backup) |
-| `1`–`7` | Pick a colour: ice blue, white, red, orange, yellow, green, pink |
+| `1`–`7` | Pick a colour (see [Colours](#colours)) |
 | `C` | Next colour |
 | `B` | Ink style on/off (thick-and-thin pen look) |
+
+### Colours
+
+| Key | Colour |
+| --- | --- |
+| `1` | <img src="assets/colors/ice-blue.svg" width="14" height="14" alt=""> Ice blue |
+| `2` | <img src="assets/colors/white.svg" width="14" height="14" alt=""> White |
+| `3` | <img src="assets/colors/red.svg" width="14" height="14" alt=""> Red |
+| `4` | <img src="assets/colors/orange.svg" width="14" height="14" alt=""> Orange |
+| `5` | <img src="assets/colors/yellow.svg" width="14" height="14" alt=""> Yellow |
+| `6` | <img src="assets/colors/green.svg" width="14" height="14" alt=""> Green |
+| `7` | <img src="assets/colors/pink.svg" width="14" height="14" alt=""> Pink |
+
+Press `C` to cycle through them. The current colour is highlighted in the top-left corner.
 
 ### Erasing
 
@@ -68,6 +93,7 @@ Leave the terminal running while you use it. Press `Ctrl+C` to stop the server.
 | Control | Action |
 | --- | --- |
 | `F` | Fullscreen |
+| `H` | Show/hide the help panel |
 
 ## Features
 

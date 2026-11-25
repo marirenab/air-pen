@@ -79,6 +79,7 @@ const HANDWRITING_FONT = "Caveat, 'Bradley Hand', 'Segoe Print', cursive";
 try { document.fonts.load(`40px ${HANDWRITING_FONT}`); } catch {}
 
 const toast = document.getElementById('toast');
+const help = document.getElementById('help');
 let toastTimer = null;
 function showToast(text) {
   toast.textContent = text;
@@ -285,6 +286,14 @@ window.addEventListener('keydown', (e) => {
     if (/^[a-z]$/i.test(e.key)) finishLearning(e.key.toLowerCase());
     else if (e.key === 'Escape') { learnPending = null; showToast('Cancelled'); }
     if (e.key !== 'Shift') return;
+  }
+
+  if (e.key.toLowerCase() === 'h' && !e.repeat) {
+    help.classList.toggle('open');
+  }
+
+  if (e.key === 'Escape') {
+    help.classList.remove('open');
   }
 
   if (e.key.toLowerCase() === 't' && !e.repeat) {

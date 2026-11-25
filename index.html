@@ -19,6 +19,60 @@
   <canvas id="canvas"></canvas>
   <div id="palette"></div>
   <div id="toast"></div>
+  <div id="help-hint">Press <kbd>H</kbd> for help</div>
+
+  <aside id="help" class="open" aria-label="Instructions">
+    <header>
+      <h2>Air Pen</h2>
+      <span class="close-note"><kbd>H</kbd> to close</span>
+    </header>
+
+    <section>
+      <h3>Hand gestures</h3>
+      <dl>
+        <dt><span class="icon">🤏</span> Pinch thumb + index</dt>
+        <dd>Draw. The dot turns white while drawing.</dd>
+        <dt><span class="icon">🖐️</span> Open your fingers</dt>
+        <dd>Stop drawing and move the dot freely.</dd>
+        <dt><span class="icon">⏸️</span> Keep pinching and hold still</dt>
+        <dd>Snap a rough shape to a clean line, circle, triangle or rectangle.</dd>
+        <dt><span class="icon">☝️</span> Move your hand</dt>
+        <dd>The dot follows the point between your thumb and index finger.</dd>
+      </dl>
+    </section>
+
+    <section>
+      <h3>Colours</h3>
+      <div class="help-colors">
+        <span><kbd>1</kbd><i style="background:rgb(176,225,255)"></i>Ice blue</span>
+        <span><kbd>2</kbd><i style="background:rgb(255,255,255)"></i>White</span>
+        <span><kbd>3</kbd><i style="background:rgb(255,90,90)"></i>Red</span>
+        <span><kbd>4</kbd><i style="background:rgb(255,170,60)"></i>Orange</span>
+        <span><kbd>5</kbd><i style="background:rgb(255,235,90)"></i>Yellow</span>
+        <span><kbd>6</kbd><i style="background:rgb(110,240,130)"></i>Green</span>
+        <span><kbd>7</kbd><i style="background:rgb(255,120,220)"></i>Pink</span>
+        <span><kbd>C</kbd>Next colour</span>
+      </div>
+    </section>
+
+    <section>
+      <h3>Keys</h3>
+      <table>
+        <tr><td><kbd>E</kbd> hold</td><td>Rubber: move your hand to erase</td></tr>
+        <tr><td><kbd>Z</kbd></td><td>Undo</td></tr>
+        <tr><td><kbd>Space</kbd></td><td>Clear everything</td></tr>
+        <tr><td><kbd>Shift</kbd> hold</td><td>Draw without pinching</td></tr>
+        <tr><td><kbd>S</kbd></td><td>Shape correction on/off</td></tr>
+        <tr><td><kbd>B</kbd></td><td>Ink pen style on/off</td></tr>
+        <tr><td><kbd>T</kbd></td><td>Turn writing into neat handwriting</td></tr>
+        <tr><td><kbd>L</kbd> then a letter</td><td>Teach it how you write that letter</td></tr>
+        <tr><td><kbd>F</kbd></td><td>Fullscreen</td></tr>
+        <tr><td><kbd>H</kbd></td><td>Show/hide this help</td></tr>
+      </table>
+    </section>
+
+    <p class="help-tip">Tip: click the page first so it gets your key presses. Keep some room light on and your whole hand in view of the webcam.</p>
+  </aside>
 
   <script src="shapes.js"></script>
   <script src="handwriting.js"></script>

@@ -19,3 +19,44 @@ canvas {
   height: 100%;
   transform: scaleX(-1);
 }
+
+#palette {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  display: flex;
+  gap: 10px;
+  z-index: 1;
+}
+
+.swatch {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  opacity: 0.45;
+  transition: transform 0.15s, opacity 0.15s;
+}
+
+.swatch.active {
+  opacity: 1;
+  transform: scale(1.35);
+  box-shadow: 0 0 12px currentColor;
+}
+
+#toast {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  padding: 6px 12px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  font: 14px system-ui, sans-serif;
+  opacity: 0;
+  transition: opacity 0.2s;
+  pointer-events: none;
+}
+
+#toast.show {
+  opacity: 1;
+}

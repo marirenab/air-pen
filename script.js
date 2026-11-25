@@ -26,6 +26,38 @@ const swatches = COLORS.map((c, i) => {
   return el;
 });
 
+// ---------- toolbar (pinch or click) ----------
+let tool = 'pen'; // 'pen' | 'eraser' | 'recolor'
+const TOOL_NAMES = { pen: 'Pen', eraser: 'Rubber', recolor: 'Recolour' };
+
+function setTool(t) {
+  tool = t;
+  document.querySelectorAll('#toolbar [data-tool]').forEach((el) => {
+    el.classList.toggle('active', el.dataset.tool === t);
+  });
+  drawing = false;
+}
+
+const TOOLBAR_ACTIONS = {
+  pen: () => { setTool('pen'); showToast('Pen'); },
+  eraser: () => { setTool('eraser'); showToast('Rubber: pinch to erase'); },
+  recolor: () => { setTool('recolor'); showToast('Recolour: pinch over things to paint them'); },
+  undo: () => undo(),
+  redo: () => redo(),
+  text: () => convertWriting(),
+  clear: () => clearAll(),
+};
+
+const toolButtons = [...document.querySelectorAll('#toolbar [data-action]')];
+toolButtons.forEach((el) => el.addEventListener('click', () => TOOLBAR_ACTIONS[el.dataset.action]()));
+
+// Everything the hand can "press": colours first, then toolbar buttons.
+const handTargets = [
+  ...swatches.map((el, i) => ({ el, press: () => { setColor(i); showToast(COLORS[i].name); } })),
+  ...toolButtons.map((el) => ({ el, press: TOOLBAR_ACTIONS[el.dataset.action] })),
+];
+swatches.forEach((el, i) => el.addEventListener('click', () => setColor(i)));
+
 function setColor(i) {
   colorIndex = (i + COLORS.length) % COLORS.length;
   penColor = COLORS[colorIndex].value;
@@ -34,9 +66,47 @@ function setColor(i) {
 }
 
 let strokes = [];
+
+// ---------- undo / redo ----------
+// Every change saves a copy of the drawing first, so Z can step back and Y forward.
+const MAX_HISTORY = 100;
+let undoHistory = [];
+let redoStack = [];
+let pendingSnapshot = false; // eraser/recolour save a copy only once they actually change something
+
+const cloneItem = (s) => Object.assign([], s); // copies points and properties (colour, text...)
+const snapshot = () => ({ strokes: strokes.map(cloneItem), lastConvertedId });
+
+function saveHistory() {
+  undoHistory.push(snapshot());
+  if (undoHistory.length > MAX_HISTORY) undoHistory.shift();
+  redoStack = [];
+}
+
+function restore(state) {
+  strokes = state.strokes;
+  lastConvertedId = state.lastConvertedId;
+  drawing = false;
+}
+
+function undo() {
+  if (!undoHistory.length) return showToast('Nothing to undo');
+  redoStack.push(snapshot());
+  restore(undoHistory.pop());
+}
+
+function redo() {
+  if (!redoStack.length) return showToast('Nothing to redo');
+  undoHistory.push(snapshot());
+  restore(redoStack.pop());
+}
 let currentStroke = [];
 let shiftHeld = false;
 let eraserHeld = false;
+let recolorHeld = false;
+let wasPenDown = false;
+let paletteClick = false;  // this pinch picked a colour, so don't draw with it
+let hoverSwatch = -1; // R: paint existing lines/text with the current colour
 const ERASER_RADIUS = 35;
 let drawing = false;
 let smoothX = null;
@@ -144,9 +214,19 @@ function convertWriting() {
     });
     words.push(item);
   }
+  if (words.length) saveHistory();
   strokes = strokes.filter((s) => !writing.includes(s)).concat(words);
   lastConvertedId = nextStrokeId - 1;
   showToast(words.length ? `"${words.map((w) => w.text).join(' / ')}"  (Z to undo)` : 'Could not read that');
+}
+
+function clearAll() {
+  if (!strokes.length) return;
+  saveHistory();
+  strokes = [];
+  currentStroke = [];
+  drawing = false;
+  showToast('Cleared (Z to bring it back)');
 }
 
 function startLearning() {
@@ -161,6 +241,7 @@ function startLearning() {
 
 function finishLearning(letter) {
   const count = teachLetter(letter, learnPending.map(toScreen));
+  saveHistory();
   strokes = strokes.filter((s) => !learnPending.includes(s));
   learnPending = null;
   showToast(`Learned "${letter}". ${count} example${count === 1 ? '' : 's'} saved.`);
@@ -219,6 +300,7 @@ function endStroke() {
     currentStroke.splice(Math.max(1, currentStroke.length - TRIM_END_POINTS));
     if (strokeLength(currentStroke) < MIN_STROKE_LENGTH) {
       strokes = strokes.filter((s) => s !== currentStroke);
+      undoHistory.pop(); // the stroke vanished, so its undo step is pointless
     }
   }
   drawing = false;
@@ -233,9 +315,15 @@ function dist(a, b) {
   return Math.hypot(a.x - b.x, a.y - b.y);
 }
 
+const MIN_CANVAS = 50; // px: ignore tiny/zero sizes (minimising, dragging very small)
+
 function resizeCanvas() {
-  const oldWidth = canvas.width || window.innerWidth;
-  const oldHeight = canvas.height || window.innerHeight;
+  // A zero or tiny size would squash every point into one corner for good,
+  // so wait until the window has a real size again.
+  if (window.innerWidth < MIN_CANVAS || window.innerHeight < MIN_CANVAS) return;
+
+  const oldWidth = canvas.width >= MIN_CANVAS ? canvas.width : window.innerWidth;
+  const oldHeight = canvas.height >= MIN_CANVAS ? canvas.height : window.innerHeight;
 
   canvas.width = window.innerWidth;
   canvas.height = window.innerHeight;
@@ -243,11 +331,17 @@ function resizeCanvas() {
   const scaleX = canvas.width / oldWidth;
   const scaleY = canvas.height / oldHeight;
 
-  for (const stroke of strokes) {
-    for (const point of stroke) {
-      point.x *= scaleX;
-      point.y *= scaleY;
-    }
+  // Scale the drawing and every saved undo/redo copy (shared points only once).
+  const items = new Set(strokes);
+  for (const state of [...undoHistory, ...redoStack]) state.strokes.forEach((s) => items.add(s));
+  for (const s of [...items]) if (s.originals) s.originals.forEach((o) => items.add(o));
+  const points = new Set();
+  for (const s of items) for (const p of s) points.add(p);
+  for (const point of points) {
+    point.x *= scaleX;
+    point.y *= scaleY;
+  }
+  for (const stroke of items) {
     if (stroke.text) {
       stroke.x *= scaleX;
       stroke.baseline *= scaleY;
@@ -266,6 +360,122 @@ function resizeCanvas() {
 
 setColor(0);
 resizeCanvas();
+
+// ---------- saving ----------
+// Positions are stored as fractions of the screen, so a project opens correctly
+// on a different screen or projector.
+const AUTOSAVE_KEY = 'air-pen-autosave';
+const r3 = (v) => Math.round(v * 10000) / 10000;
+
+function serialize() {
+  const W = canvas.width, H = canvas.height;
+  return JSON.stringify({
+    app: 'air-pen',
+    version: 1,
+    savedAt: new Date().toISOString(),
+    lastConvertedId,
+    items: strokes.map((s) => s.text
+      ? { type: 'text', text: s.text, color: s.color, id: s.id,
+          x: r3(s.x / W), baseline: r3(s.baseline / H), size: r3(s.size / H), width: r3(s.width / W) }
+      : { type: 'stroke', color: s.color, id: s.id, sharp: !!s.sharp, shape: !!s.shape,
+          points: s.map((p) => [r3(p.x / W), r3(p.y / H)]) }),
+  });
+}
+
+function deserialize(json) {
+  const data = JSON.parse(json);
+  if (data.app !== 'air-pen' || !Array.isArray(data.items)) throw new Error('Not an Air Pen project');
+  const W = canvas.width, H = canvas.height;
+  const items = data.items.map((it) => it.type === 'text'
+    ? Object.assign([], { text: it.text, color: it.color, id: it.id,
+        x: it.x * W, baseline: it.baseline * H, size: it.size * H, width: it.width * W })
+    : Object.assign(it.points.map(([x, y]) => ({ x: x * W, y: y * H })),
+        { color: it.color, id: it.id, sharp: it.sharp, shape: it.shape }));
+  strokes = items;
+  lastConvertedId = data.lastConvertedId || 0;
+  nextStrokeId = Math.max(0, ...items.map((s) => s.id || 0)) + 1;
+  drawing = false;
+}
+
+function download(filename, href) {
+  const a = document.createElement('a');
+  a.href = href;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+}
+
+const stamp = () => new Date().toISOString().slice(0, 16).replace('T', '_').replace(':', '-');
+
+function saveProject() {
+  const url = URL.createObjectURL(new Blob([serialize()], { type: 'application/json' }));
+  download(`air-pen_${stamp()}.json`, url);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  showToast('Project saved to your Downloads');
+}
+
+const fileInput = document.getElementById('file-input');
+function openProject() {
+  fileInput.value = '';
+  fileInput.click();
+}
+fileInput.addEventListener('change', async () => {
+  const file = fileInput.files[0];
+  if (!file) return;
+  try {
+    const text = await file.text();
+    saveHistory(); // Z goes back to what was on screen before opening
+    deserialize(text);
+    showToast(`Opened ${file.name}`);
+  } catch (err) {
+    undoHistory.pop();
+    showToast('Could not open that file');
+    console.error(err);
+  }
+});
+
+// Picture of the wall as you see it (the canvas is mirrored on screen, so flip it back).
+function exportImage() {
+  ctx.fillStyle = '#000000';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  drawStrokes(); // fresh render without the cursor
+  ctx.shadowBlur = 0;
+  const out = document.createElement('canvas');
+  out.width = canvas.width;
+  out.height = canvas.height;
+  const octx = out.getContext('2d');
+  octx.translate(out.width, 0);
+  octx.scale(-1, 1);
+  octx.drawImage(canvas, 0, 0);
+  download(`air-pen_${stamp()}.png`, out.toDataURL('image/png'));
+  showToast('Picture saved to your Downloads');
+}
+
+// Autosave: keep the current drawing in this browser so a reload doesn't lose it.
+let lastAutosave = '';
+function autosave() {
+  const data = serialize().replace(/"savedAt":"[^"]*",/, '');
+  if (data === lastAutosave) return;
+  lastAutosave = data;
+  try {
+    localStorage.setItem(AUTOSAVE_KEY, data);
+  } catch {
+    // storage unavailable or full: skip quietly
+  }
+}
+try {
+  const saved = localStorage.getItem(AUTOSAVE_KEY);
+  if (saved) {
+    deserialize(saved);
+    lastAutosave = saved;
+    if (strokes.length) showToast('Restored your last drawing (Space clears, Z brings it back)');
+  }
+} catch (err) {
+  console.error('Could not restore autosave:', err);
+}
+setInterval(autosave, 2000);
+window.addEventListener('beforeunload', autosave);
 window.addEventListener('resize', resizeCanvas);
 
 async function toggleFullscreen() {
@@ -281,6 +491,14 @@ async function toggleFullscreen() {
 }
 
 window.addEventListener('keydown', (e) => {
+  // Cmd/Ctrl shortcuts: save and open projects.
+  if (e.metaKey || e.ctrlKey) {
+    const k = e.key.toLowerCase();
+    if (k === 's') { e.preventDefault(); saveProject(); }
+    if (k === 'o') { e.preventDefault(); openProject(); }
+    return;
+  }
+
   // While teaching a letter, the next key is the letter's name, not a command.
   if (learnPending) {
     if (/^[a-z]$/i.test(e.key)) finishLearning(e.key.toLowerCase());
@@ -304,6 +522,14 @@ window.addEventListener('keydown', (e) => {
     startLearning();
   }
 
+  if (e.key.toLowerCase() === 'p' && !e.repeat) {
+    TOOLBAR_ACTIONS.pen();
+  }
+
+  if (e.key.toLowerCase() === 'i' && !e.repeat && !learnPending) {
+    exportImage();
+  }
+
   if (e.key.toLowerCase() === 'b' && !e.repeat) {
     beautify = !beautify;
     showToast(beautify ? 'Ink style on' : 'Ink style off');
@@ -315,9 +541,7 @@ window.addEventListener('keydown', (e) => {
 
   if (e.code === 'Space') {
     e.preventDefault();
-    strokes = [];
-    currentStroke = [];
-    drawing = false;
+    clearAll();
   }
 
   if (/^[1-9]$/.test(e.key) && Number(e.key) <= COLORS.length) {
@@ -334,18 +558,24 @@ window.addEventListener('keydown', (e) => {
   }
 
   if (e.key.toLowerCase() === 'e') {
+    if (!e.repeat) pendingSnapshot = true;
     eraserHeld = true;
     drawing = false;
   }
 
-  if (e.key.toLowerCase() === 'z' && !e.repeat) {
-    const removed = strokes.pop();
-    // Undoing a conversion brings your handwriting back.
-    if (removed && removed.originals) {
-      strokes.push(...removed.originals);
-      lastConvertedId = Math.min(...removed.originals.map((s) => s.id)) - 1;
-    }
+  if (e.key.toLowerCase() === 'r') {
+    if (!e.repeat) pendingSnapshot = true;
+    recolorHeld = true;
     drawing = false;
+  }
+
+  if (e.key.toLowerCase() === 'z' && !e.repeat) {
+    if (e.shiftKey) redo();
+    else undo();
+  }
+
+  if (e.key.toLowerCase() === 'y' && !e.repeat) {
+    redo();
   }
 
   if (e.key.toLowerCase() === 'f' && !e.repeat) {
@@ -362,11 +592,16 @@ window.addEventListener('keyup', (e) => {
   if (e.key.toLowerCase() === 'e') {
     eraserHeld = false;
   }
+
+  if (e.key.toLowerCase() === 'r') {
+    recolorHeld = false;
+  }
 });
 
 window.addEventListener('blur', () => {
   shiftHeld = false;
   eraserHeld = false;
+  recolorHeld = false;
   drawing = false;
 });
 
@@ -485,10 +720,13 @@ function textHit(item, x, y, r) {
 // Remove every point within the eraser radius, splitting strokes where they get cut.
 function eraseAt(x, y) {
   const r2 = ERASER_RADIUS * ERASER_RADIUS;
+  const before = pendingSnapshot ? snapshot() : null; // only copy when an undo step is needed
+  let changed = false;
   const kept = [];
   for (const stroke of strokes) {
     if (stroke.text) {
       if (!textHit(stroke, x, y, ERASER_RADIUS)) kept.push(stroke); // rubbing text removes the word
+      else changed = true;
       continue;
     }
     const newPiece = () => Object.assign([], {
@@ -499,6 +737,7 @@ function eraseAt(x, y) {
       const dx = p.x - x;
       const dy = p.y - y;
       if (dx * dx + dy * dy <= r2) {
+        changed = true;
         if (piece.length) kept.push(piece);
         piece = newPiece();
       } else {
@@ -507,7 +746,30 @@ function eraseAt(x, y) {
     }
     if (piece.length) kept.push(piece);
   }
+  if (!changed) return;
+  if (pendingSnapshot) {
+    undoHistory.push(before);
+    redoStack = [];
+    pendingSnapshot = false;
+  }
   strokes = kept;
+}
+
+// Recolour brush: anything under the ring takes the current pen colour.
+function recolorAt(x, y) {
+  const r2 = ERASER_RADIUS * ERASER_RADIUS;
+  for (const item of strokes) {
+    if (item.color === penColor) continue;
+    const hit = item.text
+      ? textHit(item, x, y, ERASER_RADIUS)
+      : item.some((p) => (p.x - x) ** 2 + (p.y - y) ** 2 <= r2);
+    if (!hit) continue;
+    if (pendingSnapshot) {
+      saveHistory();
+      pendingSnapshot = false;
+    }
+    item.color = penColor;
+  }
 }
 
 function drawCursor() {
@@ -519,10 +781,29 @@ function drawCursor() {
     ctx.lineWidth = 2;
     ctx.stroke();
   }
-  if (eraserHeld) {
+  const eraserMode = eraserHeld || (tool === 'eraser' && !recolorHeld);
+  const recolorMode = !eraserMode && (recolorHeld || tool === 'recolor');
+  const pressing = penDown && !paletteClick;
+  if (recolorMode) {
+    ctx.beginPath();
+    ctx.arc(smoothX, smoothY, ERASER_RADIUS, 0, Math.PI * 2);
+    ctx.shadowColor = penColor;
+    ctx.shadowBlur = 10;
+    ctx.strokeStyle = penColor;
+    ctx.lineWidth = pressing || recolorHeld ? 4 : 2;
+    ctx.setLineDash([6, 5]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    return;
+  }
+  if (eraserMode) {
     ctx.beginPath();
     ctx.arc(smoothX, smoothY, ERASER_RADIUS, 0, Math.PI * 2);
     ctx.shadowBlur = 0;
+    if (pressing || eraserHeld) {
+      ctx.fillStyle = 'rgba(255, 128, 128, 0.18)';
+      ctx.fill();
+    }
     ctx.strokeStyle = '#FF8080';
     ctx.lineWidth = 2;
     ctx.stroke();
@@ -587,18 +868,46 @@ function onResults(results) {
   smoothX = filterX.filter(mapToScreen(px) * canvas.width, now);
   smoothY = filterY.filter(mapToScreen(py) * canvas.height, now);
 
-  if (eraserHeld) {
+  // Press colours and toolbar buttons with your hand: move the dot over one and pinch.
+  const screenX = canvas.width - smoothX; // canvas is mirrored on screen
+  const hit = handTargets.findIndex(({ el }) => {
+    const r = el.getBoundingClientRect();
+    const pad = 8; // a little extra room: hands aren't precise
+    return screenX >= r.left - pad && screenX <= r.right + pad && smoothY >= r.top - pad && smoothY <= r.bottom + pad;
+  });
+  if (hit !== hoverSwatch) {
+    handTargets.forEach(({ el }, j) => el.classList.toggle('hover', j === hit));
+    hoverSwatch = hit;
+  }
+  const pinchStarted = penDown && !wasPenDown;
+  if (pinchStarted && hit !== -1) {
+    handTargets[hit].press();
+    paletteClick = true; // this pinch pressed a button, so it doesn't draw
+  }
+  if (!penDown) paletteClick = false;
+  wasPenDown = penDown;
+
+  // Rubber/recolour: hold E/R, or pick the tool and pinch.
+  const handActive = penDown && !paletteClick;
+  const erasing = eraserHeld || (tool === 'eraser' && handActive);
+  const recoloring = !erasing && (recolorHeld || (tool === 'recolor' && handActive));
+  if (pinchStarted && !paletteClick && tool !== 'pen') pendingSnapshot = true;
+
+  if (erasing) {
     eraseAt(smoothX, smoothY);
+  } else if (recoloring) {
+    recolorAt(smoothX, smoothY);
   }
 
   drawCursor();
 
-  if (eraserHeld) {
+  if (erasing || recoloring || eraserHeld || recolorHeld) {
     endStroke();
-  } else if (shiftHeld || penDown) {
+  } else if (shiftHeld || (handActive && tool === 'pen')) {
     if (!drawing) {
       drawing = true;
       strokeFromPinch = !shiftHeld;
+      saveHistory();
       currentStroke = Object.assign([], { color: penColor, id: nextStrokeId++ });
       strokes.push(currentStroke);
     }
